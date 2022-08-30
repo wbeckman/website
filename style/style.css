@@ -1,6 +1,3 @@
-/* Nice orange: FF5733 */
-
-
 @font-face {
     font-family: "GT America Mono Regular";
     src: url('fonts/GT-America-Mono-Regular.ttf') format('truetype');
@@ -18,6 +15,30 @@ span.name {
 a, a:hover, a:focus, a:active {
     text-decoration: none;
     color: inherit;
+}
+
+video.standard{
+    padding-top: 30px;
+    margin: 0 15%;
+    width:70%;
+    align-content: center;
+}
+
+h1.standard, h2.standard {
+    padding-top: 30px;
+    font-family: "GT America Mono Regular";
+    text-align: center;
+    margin: 0 7.5%;
+    width:85%;
+}
+
+p.standard {
+    padding-top: 30px;
+    font-size: larger;
+    font-family: "GT America Mono Regular";
+    text-align: center;
+    margin: 0 15%;
+    width:70%;
 }
 
 /* Wraps all of the grid content */
@@ -41,7 +62,7 @@ div.navbar-grid {
 }
 
 /* Style for top left of website */
-div.header-welcome {
+div.header-tabs-selected {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -62,20 +83,20 @@ div.header-tabs {
     justify-content: center;
     font-family: "GT America Regular";
     letter-spacing: .3rem;
-    border: 4px solid #cccccc /* Nice orange: FF5733 */
+    border: 4px solid #cccccc
 }
 
 /* Defines styles for navbar grid (separate from content grid) */
 div.content-grid {
     position:relative;
-    padding-top: 50px;
+    padding-top: 20px;
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    grid-template-rows: 1fr, 20px, repeat(4, 1fr);
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr, 20px, repeat(6, 1fr);
     grid-column-gap: 10px;
     text-align: center;
-    width:80%;
-    margin: 0 10%;
+    width:75%;
+    margin: 0 12.5%;
 }
 
 div.content-grid-cell {
@@ -88,7 +109,14 @@ div.content-grid-cell {
     font-family: "GT America Mono Regular";
 }
 
-/* Borrowed from: https://lenadesign.org/2022/01/07/css-text-drop-animation/ and slightly modified */
+hr.dotted {
+    border-color: transparent;
+    padding-top: 30px;
+    border-bottom: 3px dotted #000;
+    width:75%;
+    margin: 0 12.5%;
+}
+
 .drop {
     opacity:0;
     animation: drop 0.5s linear forwards;
@@ -102,7 +130,6 @@ div.content-grid-cell {
     75% {transform: translateY(-22px) scaleY(.9); opacity: 1; -webkit-transform: rotate(5deg);}
     100% {transform: translateY(0px) scaleY(1); opacity: 1;}
 }
-
 
 .fadeAnimation {
     position: relative;
