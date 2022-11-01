@@ -30,7 +30,7 @@ body {
 /* ------- Sections ------- */
 
 section {
-  padding: calc(6em + 5vw) 5vw 8vw 5vw;
+  padding: calc(4em + 5vw) 5vw 8vw 5vw;
   /* ! Everything below is needed ! */
   display: none;
   position: absolute;
@@ -161,6 +161,27 @@ img, svg, video, audio {
   max-width: 100%;
   height: auto;
   fill: currentColor;
+}
+
+details > summary {
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.img-center {
+  display: block;
+  text-align: center;
+  justify-content: center;
+  margin:auto;
+}
+
+.center {
+
+  text-align: center;
+  margin:auto;
+  overflow: hidden;
 }
   
 code, textarea {
