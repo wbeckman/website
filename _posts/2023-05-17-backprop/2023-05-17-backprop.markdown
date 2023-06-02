@@ -1,11 +1,19 @@
 ---
 layout: post
-title:  "Backpropagation - an attempt to re-create Micrograd"
+title:  "Backpropagation - re-writing Micrograd"
 date:   2023-05-17 12:00:00 -0400
 usemathjax: true
 ---
 
 <center><image src="assets/posts/2023-05-17-backprop/neural_net.png"></image></center>
+
+<br>
+
+<p style="text-align: center;">The code associated with this blog post can be found 
+<a target="_blank" href="https://github.com/wbeckman/micrograd-without-looking">here</a>.</p>
+
+<br>
+
 
 # Table of Contents
 - [Table of Contents](#table-of-contents)
@@ -13,32 +21,64 @@ usemathjax: true
   - [Neural Networks](#neural-networks)
   - [Computational graphs](#computational-graphs)
     - [What is a computational graph?](#what-is-a-computational-graph)
-    - [Comparing Neural Network Representations Visually](#comparing-neural-network-representations-visually)
+    - [Representing (Simple) Neural Networks as a Computational Graph](#representing-simple-neural-networks-as-a-computational-graph)
   - [Calculus](#calculus)
-    - [Derivatives in a Simple Feedforward Network](#derivatives-in-a-simple-feedforward-network)
+    - [Derivatives for a Simple Feedforward Network](#derivatives-for-a-simple-feedforward-network)
     - [Chain rule](#chain-rule)
-  - [Derivatives on Computational Graphs](#derivatives-on-computational-graphs)
-    - [Why is it "reverse mode"?](#why-is-it-reverse-mode)
-  - [Backpropagation](#backpropagation)
+  - [Gradients on a Computational Graph](#gradients-on-a-computational-graph)
+    - [The Trivial Case](#the-trivial-case)
+    - [Two Levels Deep - Propagating Gradients](#two-levels-deep---propagating-gradients)
+    - [Backpropagation and Network Training](#backpropagation-and-network-training)
+  - [Training a Network!](#training-a-network)
+
+<br>
+
+---
+
+<br>
 
 
 ## Background
 
-In an attempt to refamiliarize myself with backprop, I re-wrote an autograd library written by Andrej Karpathy called "[micrograd](https://github.com/karpathy/micrograd){:target="_blank"}", and (almost successfully) managed to do so without looking. Micrograd runs *[reverse-mode automatic-differentiation](https://en.wikipedia.org/wiki/Automatic_differentiation#Reverse_accumulation){:target="_blank"} (auto-diff) to compute gradients for a computational graph*. Since a neural network is a *special case* of a computational graph, you can apply this procedure *to tune neural network weights based on those gradients* and then *iteratively refine gradients and update weights*. This procedure describes the backpropagation algorithm, which is a *special case* of reverse-mode auto-diff. If this sounds confusing, this post will help to break all of this down step-by step.
+In an attempt to refamiliarize myself with the backpropagation algorithm (i.e. "backprop"), I re-wrote an autograd library written by Andrej Karpathy called "[micrograd](https://github.com/karpathy/micrograd){:target="_blank"}", and (almost successfully) managed to do so without looking. Micrograd runs *[reverse-mode automatic-differentiation](https://en.wikipedia.org/wiki/Automatic_differentiation#Reverse_accumulation){:target="_blank"} (auto-diff) to compute gradients for a computational graph*. Since a neural network is a *special case* of a computational graph, backprop is a *special case* of reverse-mode auto-diff when it is applied to a neural network. If this sounds confusing, read on, and I will break this all down step-by step.
 
 You will need a bit of calculus knowledge of elementary derivatives and the chain rule to understand this. If you have previously studied calculus but need a refresher, this post should get you up to speed on what you need to remember. There's, unfortunately, no way to make a post about backpropagation short, but I have provided a table of contents so you can skim/skip sections that you're already familiar with.
 
-This is an informal post that  will use small amounts of formal math notation, but I will try in keep it to a minimum. In places where math notation could be used, I prefer code instead.
+This is an informal post that  will use small amounts of formal math notation, but I will try in keep it to a minimum. In places where math notation could be used, I prefer visuals and code.
 
 If you somehow showed up here without having seen Karpathy's original video, I highly recommend you check out the original [here](https://www.youtube.com/watch?v=VMj-3S1tku0&list=PLAqhIrjkxbuWI23v9cThsA9GvCAUhRvKZ&index=2){:target="_blank"}.
 
+<br>
+
+---
+
+<br>
+
 ## Neural Networks
 
-If you aren't familiar with why neural networks are important, I could write thousands of words on that, but I will spare you. Neural networks are non-linear function approximators that can theoretically approximate [any continuous function](https://en.wikipedia.org/wiki/Universal_approximation_theorem){:target="_blank"}. They can be used to predict/generate statistical co-occurrences of words (as in large language models), they can be used to model co-occurrences of image pixels (as in image segmentation/detection/classification models), they can be used to help recommend content on a website (via content embeddings), and they are an important component of systems that can play games at superhuman levels (as in reinforcement learning). Each of these things are extremely cool in their own right and deserve a blog post of their own, but this post is going low-level in how neural networks are trained. 
+If you aren't familiar with why neural networks are a big deal, I could write thousands of words on that, but I will spare you. Neural networks are non-linear (e.g. any function that's not a line, think $$y=x^2$$) function approximators that can theoretically approximate [any continuous function](https://en.wikipedia.org/wiki/Universal_approximation_theorem){:target="_blank"}. They can be used to model statistical co-occurrences of words (as in large language models), they can be used to model co-occurrences of image pixels (as in image segmentation/detection/classification models), they can be used to help recommend content on a website (via content embeddings), and they are an important component of systems that can play games at superhuman levels (as in deep reinforcement learning). Each of these things are extremely cool in their own right and deserve a blog post of their own, but this post is going low-level in how simple neural networks are trained, providing intuition on how more complicated neural networks might be trained.
 
-The most amazing thing about neural networks to me, however, is that they are all trained with *one algorithm*. As you might have guessed, that algorithm is *backpropagation*. GPT-4 is trained using backpropagation. All sorts of generative AI (i.e. stable diffusion, midjourney) is trained with backpropagation. Even *image explanations* in the emerging field of explainable AI are produced using backpropagation (on the pixels of the image instead of the network weights). It's not an exaggeration to say that recently, backpropagation has been one of the most important algorithms in the world. 
+<center>
+<p>
+    <video width="300" height="200" autoplay loop muted>
+      <source src="assets/posts/2023-05-17-backprop/lunar-lander-trimmed.mp4" type="video/mp4" />
+    </video> 
 
-So in brief: neural networks are function approximators that take an input X and produce a predicted output Y that attempts to model the true distribution of the input data. There is a training procedure called backpropagation that iteratively drives the function approximation closer to the true result. The *architecture* and *loss function* of a neural network primarily govern its function. Without further adieu, let's talk about computational graphs.
+</p>
+<p>
+  <em>Maybe not... superhuman performance... but a moderately smart reinforcement learning agent I trained using a deep Q-network with experience replay.</em>
+</p>
+</center>
+
+The most amazing thing about neural networks to me, however, is that they are all trained with *a single algorithm*. As you might have guessed, that algorithm is *backpropagation*. GPT-4 is trained using backpropagation. All sorts of generative AI (e.g. stable diffusion, midjourney) are trained with backpropagation. Even local image explanations in the emerging field of explainable AI are produced using backpropagation (on the *input pixels* of the image instead of the network weights). It's not an exaggeration to say that recently, backpropagation has become one of the most important algorithms in the world. 
+
+So in brief: neural networks are function approximators that take an input X and produce a predicted output Y that attempts to model a true distribution of the input data. There is a training procedure called backpropagation that iteratively drives the neural network's approximation closer to the true function it is trying to approximate. The data the network is fed, the *architecture*, and the *loss function* of a neural network primarily govern how it behaves. If any of this is confusing to you, you might want to brush up on how neural networks work with a supplemental resource like [3blue1brown](https://www.youtube.com/watch?v=aircAruvnKk){:target="_blank"}. Otherwise, lets discuss computational graphs.
+
+<br>
+
+---
+
+<br>
 
 ## Computational graphs
 
@@ -46,112 +86,171 @@ So in brief: neural networks are function approximators that take an input X and
 
 A *computational graph* is a directed acyclic graph (DAG) in which nodes correspond to either *variables* or *operations*. The simplest computational graph might look as follows: 
 
-
 <center>
 <p>
     <img src="assets/posts/2023-05-17-backprop/computational_graph.png" alt>
 </p>
 <p>
-    <em>A computational graph in its simplest form - two numbers a and b being added together to produce a third value, c. The code to generate these visuals was adapted from Karpathy's code in Micrograd.</em>
+    <em>A computational graph in its simplest form - two variables: a=1 and b=2 being multiplied to produce a third value, c=2. The code to generate these visuals was adapted from Karpathy's graphviz code in Micrograd.</em>
 </p>
 </center>
 
-While this is a very simple example of a computational graph, it's a step in the right direction for what we need for a forward pass in a neural network. It might help to create a forward pass in a computational graph and compare it to the "classic" view of a neural network.
+While this is a very simple example of a computational graph, it's a step in the right direction for what we need for a forward pass in a neural network. It might help to show what a single neuron activation looks like in a computational graph and compare it to the more "classic" representation of a neural network.
 
 
-### Comparing Neural Network Representations Visually
+### Representing (Simple) Neural Networks as a Computational Graph
 
-You have probably seen a traditional view of a neural network as a bunch of spiderwebbing weights coming off of nodes. While this is a compact way to represent neural networks visually, for the purposes of backpropagation, it's much better to think of the network as a computational graph. 
+You have probably seen a traditional view of a neural network as a bunch of tangled edges between nodes in an undirected graph. While this is a compact way to represent neural networks visually, for the purposes of backpropagation, it's much better to think of the network as a computational graph. 
 
-Let's pretend that we have a very, very small neural network with two inputs, two hidden nodes, and a single output. Let's also pretend that we have just computed the activation for a single neuron in the hidden layer, H1. Here's what this might look like:
+Let's pretend that we have a very, very small neural network with two inputs, two hidden nodes, and a single output. Let's also pretend that we have just computed the activation for a single neuron in the hidden layer, h1. In the graph, we will assume dark gray nodes have triggered as of the present time and light gray nodes have not yet triggered.  Here's what the traditional view of this might look like:
 
 <center>
 <p>
     <img src="assets/posts/2023-05-17-backprop/single_neuron.png" alt>
 </p>
 <p>
-    <em>A neural network in which we have just computed $$H_1=tanh(x_1w_1+x_2w_2)$$</em>
+    <em>A neural network in which we have just computed</em> $$h_1=tanh(x_1w_1+x_2w_2)$$ 
 </p>
 </center>
 
-The equivalent computational graph (representing just the dark gray nodes) would look as follows:
+The equivalent computational graph, representing just $$h1$$'s activation, would look as follows:
 
-<center><img src="assets/posts/2023-05-17-backprop/single_neuron_comp_graph.png" alt></center>
+<center><img src="assets/posts/2023-05-17-backprop/single_neuron_comp_graph_final.png" alt></center>
 
 While the computational graph view is a lot less... terse... it makes explicit a number of details that the traditional view of neural networks obscure. For example, you can see, step-by-step, the process of computing a neuron's activation:
 
-1. Multiply the inputs by the neuron's weights ($$o_1=w_1x_2; o_2=w_2x_2$$)
-2. Sum all of the $$w_x$$ terms ($$h_1=o_1+o_2$$)
-3. Compute the activation for $$h1$$ ($$h_1\_activation=tanh(h1)$$
+1. Multiply the inputs by the neuron's weights ($$o_1=w_1x_1; o_2=w_2x_2$$)
+2. Sum all of the $$wx$$ terms ($$h_1=o_1+o_2$$)
+3. Compute the activation for $$h1$$ ($$h_1\_activation=tanh(h1))$$
 
-And, more importantly, the computational graph allows us to show what the data and the gradients are at each step of the way. 
+It's unclear that all of this is happening in the first view. More importantly, the computational graph allows us to show what the data (and the gradients, but more on that later) are at each step of the way. You can imagine that if this is one neuron (h1), all the other neurons in a hidden layer (in this case, h2) fire the same way with different weights. Now that you have seen how computational graphs can represent neural networks, we're going to put this on hold for a second and take a trip back to Calc 1. 
 
-Now that you are familiar with computational graphs and how neural networks can be represented as computational graphs, we're going to put this on hold for a second and take a trip back to Calc 1. 
+<br>
+
+---
+
+<br>
 
 ## Calculus
 
-I won't cover all of Calc 1 here, but if you've taken it a long time ago, you probably need to brush up on some derivatives. There are really only a few derivatives that you need to know to train a neural network in this tutorial. 
+Because we want to find out how we can change the weights of a neural network to make its performance improve, we will need to calculate the gradient of the weights with respect to some sort of performance measurement (known as the loss). You will need to know a few elementary derivatives and have an intuitive grasp of the chain rule to understand how backpropagation works. Both of those things will be covered in brief here.
 
-### Derivatives in a Simple Feedforward Network
+### Derivatives for a Simple Feedforward Network
 
-For this tutorial, we are considering a feedforward neural network with one input layer (i.e. data), a hidden layer, and an output layer. The derivatives that you need to know for this network are: addition, multiplication, tanh, and the power function. I will go through each of these (with respect to x and y where applicable) very quickly here.
+For this tutorial, we are considering a feedforward neural network with one input layer (i.e. data), a hidden layer, and an output layer. The derivatives that you need to know for this network are: addition, multiplication, tanh, and the power function. The derivatives for these are as follows:
 
-**Addition**
+**Addition**: $$f(x, y)=x+y$$; $$\frac{\partial f}{\partial x}=1; \frac{\partial f}{\partial y}=1$$
 
-$$f(x, y)=x+y$$
+**Multiplication**: $$f(x, y)=xy$$; $$\frac{\partial f}{\partial x}=y; \frac{\partial f}{\partial y}=x$$
 
-$$\frac{\partial f}{\partial x}=1; \frac{\partial f}{\partial y}=1$$
+**Tanh**: $$f(x)=\frac{e^x-e^{-x}}{e^x+e^{-x}}$$; $$\frac{d f}{d x}=1-\tanh(x)^2$$
 
-**Multiplication**:
+**Pow**: $$f(x, y)=x^y$$; $$\frac{\partial f}{\partial x}=y * x^{(y-1)}$$
 
-$$f(x, y)=xy$$
-
-$$\frac{\partial f}{\partial x}=y; \frac{\partial f}{\partial y}=x$$
-
-**Tanh**:
-
-$$f(x)=\frac{e^x-e^{-x}}{e^x+e^{-x}}$$
-
-$$\frac{\partial f}{\partial x}=1-\tanh(x)^2$$
-
-**Pow**:
-
-$$f(x, y)=x^y$$
-
-$$\frac{\partial f}{\partial x}=y * x^{(y-1)}$$
-
-(leaving out the derivative $$\frac{\partial f}{\partial y}$$ for the power function, because I'm being lazy and it's not important for our purposes)
+(leaving out the derivative $$\frac{\partial f}{\partial y}$$ for the power function, because I'm being lazy and it's not important for the purposes of this post)
 
 ### Chain rule 
 
-In the Andrej's video where he covers backpropagation, he references wikipedia's explanation of the chain rule, which I think is one of the most cogent explanations of a topic that is frequently over-complicated in the context of backpropagation. The amount of times that I've heard backpropagation described as a "recursive application of the chain rule" makes my head spin. Specifically, Wikipedia says:
+The amount of times that I've heard backpropagation described as a "recursive application of the chain rule" without the explainer providing intuition about what that actually *means* makes my head spin. In the Andrej's video where he covers backpropagation, he references Wikipedia's explanation of the chain rule, which I think is one of the most cogent explanations of a topic that is frequently over-complicated in the context of backpropagation. Specifically, Wikipedia says:
 
-> If a variable z depends on the variable y, which itself depends on the variable x (...), then z depends on x as well, via the intermediate variable y. In this case, the chain rule is expressed as $$\frac{dz}{dx}=\frac{dz}{dy}\frac{dy}{dx}$$
+> If a variable z depends on the variable y, which itself depends on the variable x (...), then z depends on x as well, via the intermediate variable y. In this case, the chain rule is expressed as $$\frac{d z}{d x}=\frac{d z}{d y}\frac{d y}{d x}$$
 
-Effectively, we are able to simply multiply the rates of change if we have $$\frac{dz}{dy}$$ and $$\frac{dy}{dx}$$ to get $$\frac{dz}{dx}$$. The wikipedia page offers a concrete example, as well. Specifically, it asks us to consider the speed of a human, a bicycle, and a car. Lets say $$h$$ represents the speed of a human, $$b=2h$$ the speed of the bicycle, and $$c=4b$$ the speed of the car, and we want to find the rate of change of the car with respect to the human. We can calculate $$\frac{dc}{db} = 4$$ and $$\frac{db}{dh} = 2$$ and by the chain rule, we know that $$\frac{dc}{dh} = \frac{dc}{db} \frac{db}{dh} = 4 * 2 = 8$$, or that a car is 8 times as fast as a human.
+Effectively, we are able to simply multiply the rates of change if we have $$\frac{d z}{d y}$$ and $$\frac{d y}{d x}$$ to get $$\frac{d z}{d x}$$. Although $$\frac{d z}{d y}$$ isn't really a fraction, an easy way to remember this is that $$d y$$ terms "cancel each other out" as though they were fractions.
 
-What this means in the context of backpropagation is that we have a gradient that flows into *our current node* from somewhere further down the graph. The performance of the network are effected by the current weight, *but also* all the activations downstream that the current weight affects. To figure out how the current node affects things downstream, we can multiple the current weights derivative by the downstream derivative that has been backpropagated to the current node. When we cache this value at the current node, we can continue passing it backwards using the chain rule.
+The Wikipedia page offers a concrete example, as well. Specifically, it asks us to consider the speed of a human, a bicycle, and a car. Lets say $$h$$ represents the speed of a human, $$b=2h$$ the speed of the bicycle, and $$c=4b$$ the speed of the car. We want to find the rate of change of the car with respect to the human. We can calculate $$\frac{d c}{d b} = 4$$ and $$\frac{d b}{d h} = 2$$ and by the chain rule, we know that $$\frac{d c}{d h} = \frac{d c}{d b} \frac{d b}{d h} = 4 * 2 = 8$$, or that a car is 8 times as fast as a human.
+
+In the context of backpropagation, for an arbitrary weight, we have a gradient that flows into *the current weight* from somewhere further down the graph. This value represents how all of the downstream activations that the current weight feeds into affect the loss. Since the performance of the network is affected by all the activations downstream that the current weight affects, we need to look *how it indirectly affects the loss through the nodes that it contributes to downstream*. The chain rule gives us a way to compute this value. We must *multiply* the "global" derivative that has been propagated backwards with the "local" derivative of the current weight. Once we do this, the current node's derivative becomes the new "global" derivative and we continue to pass the new "global" derivative backwards. This is what is meant by "recursively applying the chain rule". You don't have to understand all of this now, and it should become clear with a spelled out example in the next section.
+
+<br>
+
+---
+
+<br>
+
+## Gradients on a Computational Graph
 
 
-## Derivatives on Computational Graphs
 
-Now that we've covered the relevant bits of calculus and computational graphs, we are going to combine them to take derivatives *on* a computational graph. 
+Now that we've covered the relevant bits of calculus and computational graphs, we are going to combine them to take derivatives *on* a computational graph using the chain rule. We will first go over a graph that is one node deep and then we will make it deeper so that we are forced to use the chain rule to propagate gradients using the chain rule. 
+
+### The Trivial Case
+
+Let's look at the simplest form of a computational graph that we made above. We want to compute the derivative of $$c$$ with respect to $$a$$ and $$b$$. We know trivially that as $$c$$ varies, $$c$$ varies proportionally to it. The derivative of any function with respect to itself is 1:
+
+$$
+\frac{dc}{dc} = 1
+$$
+
+We can fill this out in our computational graph:
+
+<center>
+<p>
+    <img src="assets/posts/2023-05-17-backprop/computational_graph_grad_1_1.png" alt>
+</p>
+</center>
 
 
+We know that $$c(a, b) = a \cdot b$$ and, further that $$\frac{\partial c}{\partial a} = b$$. By the same logic, $$\frac{\partial c}{\partial b} = a$$. The multiplication operator acts as a magnitude/gradient "swap" that magnifies the gradient by the other value's magnitude. This makes sense - if the current value is a result of a multiplication operation and it grows, the final value grows proportionally to *the value that it's multiplied by*. The final graph looks like this: 
 
+<center>
+<p>
+    <img src="assets/posts/2023-05-17-backprop/computational_graph_grad_1_2.png" alt>
+</p>
+</center>
 
+Note that b took a's data as its gradient and vice versa. The full operations that are happening here is $$\frac{d c}{d c}\frac{\partial c}{\partial a} = 1.0 * b = 2.0$$ and $$\frac{d c}{d c}\frac{\partial c}{\partial b} = 1.0 * a = 1.0$$, since we are multiplying the "local" gradients of $$a$$ and $$b$$ by the downstream gradient, $$\frac{dc}{dc} = 1$$. The next computational graph example will make this gradient flow more concrete.
 
-### Why is it "reverse mode"?
+### Two Levels Deep - Propagating Gradients
 
+Since we are working with neural networks, let's look at a common operation: multiplying weights and inputs ($$w_i$$ and $$x_i$$) and then taking their sum (we will skip the activation function for now). Similar to the hidden unit that we expressed above, let's look at two inputs and two weights feeding into a hidden node, $$h1$$. We already know that, trivially, $$\frac{d_{h1}}{d_{h1}} = 1$$:
 
-## Backpropagation
+<center>
+<p>
+    <img src="assets/posts/2023-05-17-backprop/two_level_1.png" alt>
+</p>
+</center>
 
-Now that we've computed derivatives on a computational graph, we can apply these to a specific instance of a computational graph - a neural network. The ultimate goal of a neural network is to make accurate predictions. In order to assess how well the network makes predictions, we consider a **loss function**, which, given a prediction and a true label, rates how close the network was to being correct. If the network is performing poorly, the loss will be high, and if the network is performing well, the loss will be low. It makes sense that the The final output of the network will be this loss function. 
+As for $$\frac{d_{h1}}{d_{o1}}$$ and $$\frac{d_{h1}}{d_{o2}}$$, we need to look to the addition derivative function: $$f(o1, o2)=o1+o2$$; $$\frac{d_{h1}}{d_{o1}}=1.0$$; $$\frac{d_{h1}}{d_{o1}}=1.0$$. This means that addition acts as a gradient "router" - any downstream gradient is multiplied with strength 1.0 into the current node. When we multiply the downstream gradient at $$h1$$ (1.0) into the current node with magnitude 1.0 (1.0 * 1.0), we get the following:
 
-**It's very important that every operation in a computational graph be differentiable.** If an operation is not differentiable, we will not be able to flow the gradient backwards through that node. For example, the absolute value function is non-differentiable at zero, so we would not be able to use it in a computational graph that we are computing gradients for. Since the network is composed entirely of differentiable functions, 
+<center>
+<p>
+    <img src="assets/posts/2023-05-17-backprop/two_level_2.png" alt>
+</p>
+</center>
+
+So now we have $$\frac{d_{h1}}{d_{o1}}$$ and $$\frac{d_{h1}}{d_{o2}}$$ fully filled out. How, then, can we get $$\frac{d_{h1}}{d_{w1}}$$. for example? According to the chain rule, by multiplication. If we have $$\frac{d_{o1}}{d_{w1}}$$ and we have $$\frac{d_{h1}}{d_{o1}}$$, we have everything we need: $$\frac{d_{h1}}{d_{w1}}=\frac{d_{h1}}{d_{o1}}\frac{d_{o1}}{d_{w1}}$$. We just need to calculate the local derivative, $$\frac{d_{o1}}{d_{w1}}$$. We know that $$o1 = w1 \cdot x1$$, and therefore, that $$\frac{d o1}{d w1} = x1$$. So we get $$\frac{d_{h1}}{d_{w1}}=\frac{d_{h1}}{d_{o1}}\frac{d_{o1}}{d_{w1}}= 1.0 \cdot x1=2.0$$. This means that when we increase $$w1$$ by 1.0, $$h1$$ increases by 2.0 units. We can apply the same logic to the other inputs to calculate all of the gradients: 
+
+<center>
+<p>
+    <img src="assets/posts/2023-05-17-backprop/two_level_3.png" alt>
+</p>
+</center>
+
+There is a lot of notation here, but it really just says that you multiply the "local gradient" by the gradient that flows back to it from further down the graph. 
+
+Here's the magic of it: as long as you can calculate the derivative of a function, you can include it in the computational graph and compute the gradient. Every common neural network operation is differentiable for this reason. A simple neural network forward pass might consist of multiplication --> addition --> (differentiable) non-linearity --> multiplication --> addition --> loss function. The next section will discuss how we can take these gradients and tweak the .
+
+### Backpropagation and Network Training
+
+The ultimate goal of a neural network is to make accurate predictions. In order to assess how well the network makes predictions, we consider a **loss function**, which, given a prediction and a true label, rates how close the network was to being correct. If the network is performing poorly, the loss will be high, and if the network is performing well, the loss will be low. It makes sense that the The final output of the network will be this loss function. 
+
+Since the network is composed entirely of differentiable functions, we can calculate the derivatives of weights at any depth with respect to the loss function.
 
 This gradient computation is really all pytorch and tensorflow are doing, but they are doing it at the level of *tensors* (i.e. N-D arrays), and they are doing it much more quickly (because it's parallelized on a GPU).
 
+This is a simplified example, but it's not that much different from what a neural network does in practice. 
+
+## Training a Network!
+
+I debated whether or not to include this, but I figured it would be cool to show. This is an evolving decision boundary of a neural network that was *hand-coded* in python. It's orders of magnitude slower than pytorch would be for the same thing, but it does (more or less) exactly the same thing without the massive parallelization. 
+
+<br>
+
+---
+
+<br>
+
+If you have anything to add or see anything that you believe may be incorrect, please contact me at will@willbeckman.com.
 
 
 <!-- ## Example2
