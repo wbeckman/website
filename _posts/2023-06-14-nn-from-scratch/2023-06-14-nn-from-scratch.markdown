@@ -270,7 +270,7 @@ Here's the magic of it: as long as you can calculate the derivative of a functio
 
 The reason this is called reverse-mode autodiff is because we have to compute a forward pass to cache the "data" values, and then, we start from the end and use the cached forward data values in our derivative calculations while we work backwards. There is also a form of autodiff called forward-mode autodiff, but it makes more sense when there are more outputs than inputs, which is usually not the case with neural networks.
 
-This is all you need to understand backpropagation. While I'm glossing over the many network weights that feed into an activation in a hidden layer and the activation function, you can imagine it's more of the same as what we've already done with different derivatives. With the gradients of the weights, we're ready to do something powerful. What if we could tweak the weights so that the output goes up or down? This is where gradient descent comes in.
+This is all you need to understand backpropagation. While I'm glossing over the many network weights that feed into an activation in a hidden layer and the activation function, you can imagine it's more of the same as what we've already done with different derivatives[^1]. With the gradients of the weights, we're ready to do something powerful. What if we could tweak the weights so that the output goes up or down? This is where gradient descent comes in.
 
 ## The Other Parts of Training a Neural Network
 
@@ -319,7 +319,7 @@ The function that I am trying to model is whether or not a point is within a cir
 </p>
 </center>
 
-You can see that one neuron can only roughly approximate a lineear decision boundary, two extends that to a parabola, three actually has enough representative power to model a crude circle, and nine has the representative power to model a fairly precise circle. And this was all done with python built-in libraries! Of course, no blog post about training a neural network would be complete without the loss and accuracy per epoch for the (9-hidden neuron) network, which is standard practice to plot to see if there is a bottleneck in network training: 
+You can see that one neuron can only roughly approximate a linear decision boundary, two extends that to a parabola, three actually has enough representative power to model a crude circle, and nine has the representative power to model a fairly precise circle. And this was all done with python built-in libraries! Of course, no blog post about training a neural network would be complete without the loss and accuracy per epoch for the (9-hidden neuron) network, which is standard practice to plot to see if there is a bottleneck in network training: 
 
 <center>
 <p>
@@ -330,8 +330,7 @@ You can see that one neuron can only roughly approximate a lineear decision boun
 
 ## Conclusion
 
-This was long, but I hope it gave a good framework to approach neural network training. 
-
+It's easier to consider a computational graph separate from a neural network than it is to go through each individual weight in a neural network in excruciating detail when explaining backpropagation. Once you see how the "local derivatives" and the "global derivatives" work together and how the chain rule is recursively applied on a small scale, it's not a big step to go from our example to a full feedforward network. This was long, but I hope it gave a good framework to approach neural network training. Thanks for reading!
 
 <br>
 
@@ -339,6 +338,6 @@ This was long, but I hope it gave a good framework to approach neural network tr
 
 <br>
 
-If you're feeling ambitious, try to compute the derivatives for a two layer neural network where there is a `tanh` non-linearity and a mean-squared error loss function using the derivatives defined [above](#derivatives-for-a-simple-feedforward-network). Doing this by hand will really hammer in how the chain rule is used. 
+[^1]: If you're feeling ambitious, try to compute the derivatives for a two layer neural network where there is a `tanh` non-linearity and a mean-squared error loss function using the derivatives defined [above](#derivatives-for-a-simple-feedforward-network). Doing this by hand will really hammer in how the chain rule is used. 
 
 If you have anything to add or see anything that you believe may be incorrect, please contact me at will@willbeckman.com.
