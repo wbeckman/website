@@ -24,10 +24,7 @@ permalink: /:title.html
 
 # Build settings
 markdown: kramdown
-kramdown:
-    math_engine: katex
 usemathjax: true
-google_analytics: G-9WCTSP3NKT
 theme: minima
 plugins:
   - jekyll-feed
