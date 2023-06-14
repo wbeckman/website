@@ -1,1 +1,0 @@
-Built using the the wonderful <a href="https://github.com/cadars/john-doe">John Doe website template</a>
