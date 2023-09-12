@@ -14,6 +14,24 @@ usemathjax: true
 
 <br>
 
+##  Table of Contents <!-- omit in toc -->
+- [Background](#background)
+- [Neural Networks](#neural-networks)
+- [Computational graphs](#computational-graphs)
+  - [What is a computational graph?](#what-is-a-computational-graph)
+  - [Representing (Simple) Neural Networks as a Computational Graph](#representing-simple-neural-networks-as-a-computational-graph)
+- [Calculus](#calculus)
+  - [Derivatives for a Simple Feedforward Network](#derivatives-for-a-simple-feedforward-network)
+  - [Chain rule](#chain-rule)
+- [Gradients on a Computational Graph](#gradients-on-a-computational-graph)
+  - [The Trivial Case](#the-trivial-case)
+  - [Two Levels Deep - Propagating Gradients](#two-levels-deep---propagating-gradients)
+- [The Other Parts of Training a Neural Network](#the-other-parts-of-training-a-neural-network)
+  - [Loss Functions](#loss-functions)
+  - [Gradient Descent](#gradient-descent)
+- [Training a Network!](#training-a-network)
+- [Conclusion](#conclusion)
+
 ## Background
 
 In an attempt to refamiliarize myself with the backpropagation algorithm (i.e. "backprop"), I re-wrote an autograd library written by Andrej Karpathy called "[micrograd](https://github.com/karpathy/micrograd){:target="_blank"}", and (almost successfully) managed to do so without looking. Micrograd runs *[reverse-mode automatic-differentiation](https://en.wikipedia.org/wiki/Automatic_differentiation#Reverse_accumulation){:target="_blank"} (auto-diff) to compute gradients for a computational graph*. Since a neural network is a *special case* of a computational graph, backprop is a *special case* of reverse-mode auto-diff when it is applied to a neural network. If this sounds confusing, read on, and I will break this all down step-by step.
@@ -24,24 +42,6 @@ This is an informal post that  will use some formal math notation, mostly deriva
 
 If you somehow arrived here without having seen Andrej Karpathy's original video, I highly recommend you check out the original [here](https://www.youtube.com/watch?v=VMj-3S1tku0&list=PLAqhIrjkxbuWI23v9cThsA9GvCAUhRvKZ&index=2){:target="_blank"}.
 
-
-# Table of Contents
-- [Table of Contents](#table-of-contents)
-  - [Neural Networks](#neural-networks)
-  - [Computational graphs](#computational-graphs)
-    - [What is a computational graph?](#what-is-a-computational-graph)
-    - [Representing (Simple) Neural Networks as a Computational Graph](#representing-simple-neural-networks-as-a-computational-graph)
-  - [Calculus](#calculus)
-    - [Derivatives for a Simple Feedforward Network](#derivatives-for-a-simple-feedforward-network)
-    - [Chain rule](#chain-rule)
-  - [Gradients on a Computational Graph](#gradients-on-a-computational-graph)
-    - [The Trivial Case](#the-trivial-case)
-    - [Two Levels Deep - Propagating Gradients](#two-levels-deep---propagating-gradients)
-  - [The Other Parts of Training a Neural Network](#the-other-parts-of-training-a-neural-network)
-    - [Loss Functions](#loss-functions)
-    - [Gradient Descent](#gradient-descent)
-  - [Training a Network!](#training-a-network)
-  - [Conclusion](#conclusion)
 
 <br>
 
@@ -266,7 +266,7 @@ Continuing backpropagation into the next layer, next we have multiplication oper
 
 There is a lot of derivative notation here, but it really just says that you multiply the "local gradient" by the gradient that flows back to it from further down the graph. 
 
-Here's the magic of it: as long as you can calculate the derivative of a function, you can include it in the computational graph and compute the gradient for inputs to that function. Every common neural network operation is differentiable for this reason! A simple neural network forward pass might consist of multiplication --> addition --> (differentiable) non-linearity --> multiplication --> addition --> loss function.
+Here's the magic of it: **as long as you can calculate the derivative of a function, you can include it in the computational graph and compute the gradient for inputs to that function**. Every common neural network operation is differentiable for this reason! A simple neural network forward pass might consist of multiplication --> addition --> (differentiable) non-linearity --> multiplication --> addition --> loss function.
 
 The reason this is called reverse-mode autodiff is because we have to compute a forward pass to cache the "data" values, and then, we start from the end and use the cached forward data values in our derivative calculations while we work backwards. There is also a form of autodiff called forward-mode autodiff, but it makes more sense when there are more outputs than inputs, which is usually not the case with neural networks.
 
@@ -288,7 +288,7 @@ $$
 
 $$n$$ is the amount of input training examples, $$Y_i$$ is the true label and $$\hat{Y_i}$$ is the predicted label outputted by our network. Let's examine a few simple cases where $$n=1$$. When we predict a label of 1.0, but the true label is 0.0, we get a loss of 1.0. Similarly for when we predict a label of 0.0 and the true label is 1.0. As the prediction gets closer to the loss, the average mean-squared error of outputs gets smaller, driving our predictions closer to the true label. Since a neural network ending with MSE is composed entirely of differentiable functions, we can calculate the derivatives of weights at any depth with respect to the loss function in order to change the weights to drive the loss downward. When we calculate gradients with respect to the loss, we are figuring out how we can make our predictions ($$\hat{Y_i}$$) closer to the true function ($$Y_i$$)!
 
-Note that to compute MSE, we only need to compute the derivatives for $$f(x)=x ^ 2$$ and $$f(x, y) = x - y$$. We could calculate a derivative for MSE and make it its own function, or we could make the computational graph a bit deeper and perform those operations separately. In an autograd engine, it doesn't matter the level of granularity that you calculate derivatives for - as long as the function is differentiable, we can calculate $$f(x, y) = (x - y) ^ 2$$ or separately calculate $$z=x-y$$ and then feed it into $$f(z)=z^2$$ afterwards.
+Note that to compute MSE, we only need to compute the derivatives for $$f(x)=x ^ 2$$ and $$f(x, y) = x - y$$. We could calculate a derivative for MSE and make it its own function, or we could make the computational graph a bit deeper and perform those operations separately. **In an autograd engine, it doesn't matter the level of granularity that you calculate derivatives for - as long as the function is differentiable, we can calculate $$f(x, y) = (x - y) ^ 2$$ or separately calculate $$z=x-y$$ and then feed it into $$f(z)=z^2$$ afterwards**.
 
 ### Gradient Descent
 
@@ -330,7 +330,7 @@ You can see that one neuron can only roughly approximate a linear decision bound
 
 ## Conclusion
 
-It's easier to consider a computational graph separate from a neural network than it is to go through each individual weight in a neural network in excruciating detail when explaining backpropagation. Once you see how the "local derivatives" and the "global derivatives" work together and how the chain rule is recursively applied on a small scale, it's not a big step to go from our example to a full feedforward network. This was long, but I hope it gave a good framework to approach neural network training. Thanks for reading!
+It's easier to consider a computational graph separate from a neural network than it is to go through each individual weight in a neural network in excruciating detail when explaining backpropagation. Once you see how the "local derivatives" and the "global derivatives" work together and how the chain rule is recursively applied on a small scale, it's not a big step to go from our example to a full feedforward network. This was long, but I hope it gave a good framework to approach and debug neural network training. Thanks for reading!
 
 <br>
 
