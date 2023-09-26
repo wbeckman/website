@@ -51,12 +51,6 @@ If you somehow arrived here without having seen Andrej Karpathy's original video
 
 
 
-<br>
-
----
-
-<br>
-
 ## Neural Networks
 
 If you aren't familiar with why neural networks are a big deal, I could write thousands of words on that, but I will spare you. Neural networks are non-linear (e.g. any function that's not a line, think $$y=x^2$$) function approximators that can theoretically approximate [any continuous function](https://en.wikipedia.org/wiki/Universal_approximation_theorem){:target="_blank"}. They can be used to model statistical co-occurrences of words (as in large language models), used to model co-occurrences of image pixels (as in image segmentation/classification models), used to help recommend content on a website (via content embeddings), and are an important component of systems that can play games at superhuman levels (as in deep reinforcement learning). Each of these things are extremely cool in their own right and deserve a blog post of their own, but this post is going low-level in how simple neural networks are trained via backpropagation and gradient descent.
@@ -272,6 +266,12 @@ The reason this is called reverse-mode autodiff is because we have to compute a 
 
 This is all you need to understand backpropagation. While I'm glossing over the many network weights that feed into an activation in a hidden layer and the activation function, you can imagine it's more of the same as what we've already done with different derivatives[^1]. With the gradients of the weights, we're ready to do something powerful. What if we could tweak the weights so that the output goes up or down? This is where gradient descent comes in.
 
+<br>
+
+---
+
+<br>
+
 ## The Other Parts of Training a Neural Network
 
 In addition to taking derivatives on a computational graph, we need something that helps us determine how good our predictions are and a way to tweak our network so that the predictions get closer to "good". This section discusses those two aspects of training a neural network.
@@ -303,6 +303,12 @@ Once we have calculated the loss, we backpropagate from the end of the graph to 
 In this case, we used the learning rate $$\alpha=0.01$$. W2 was twice as affected than W1 by the gradient descent step because it has 2x larger gradient. We have also completed a new forward pass and can observe the new output of $$h1$$ is lower than it previously was! If $$h1$$ were a loss function, we would have made the network's predictions closer to the true function we are trying to model.
 
 This is a simplified example, but it's really not that much different from what your neural network libraries like PyTorch and Tensorflow are doing in practice. They're just much better at parallelizing gradient computations and batching your data to do fancier things like mini-batch gradient descent. There is a fair amount we didn't cover with neural network training here (such as different types of loss functions, different gradient-based optimization algorithms, actually implementing a full neural network), but that isn't important for understanding how a neural network is trained at a low level. Now, I'll show you some neural networks I trained from scratch using my autodiff library.
+
+<br>
+
+---
+
+<br>
 
 ## Training a Network!
 

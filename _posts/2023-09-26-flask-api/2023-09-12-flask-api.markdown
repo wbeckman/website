@@ -1,0 +1,197 @@
+---
+layout: post
+title:  "Productionizing ML Models - Part 1"
+date:   2023-09-26 12:00:00 -0400
+usemathjax: true
+---
+
+
+<center>
+<p><image height=200px src="assets/posts/2023-09-26-flask-api/Agaricus-campestris.jpg"></image></p>
+<p><em>Delicious supplement to dinner? Or deadly poison?<br>(image from <a href="https://en.wikipedia.org/wiki/Agaricus#/media/File:Agaricus-campestris-michoacan.jpg">Wikipedia</a>)</em></p>
+
+</center>
+
+<p style="text-align: center;">The code associated with this blog post can be found 
+<a target="_blank" href="https://github.com/wbeckman/flask-api">here</a>.</p>
+
+
+## Table of Contents <!-- omit in toc -->
+- [Background](#background)
+- [Training a Model](#training-a-model)
+- [Setting up a Flask Scoring Server](#setting-up-a-flask-scoring-server)
+  - [Creating a POST Endpoint](#creating-a-post-endpoint)
+  - [Model Validations](#model-validations)
+  - [Creating a Feature Vector](#creating-a-feature-vector)
+  - [Scoring With a Model Object](#scoring-with-a-model-object)
+- [Conclusion](#conclusion)
+
+## Background
+
+Most of the time, ML models are objects that contain information about how to make predictions within a very specific problem context. Because the knowledge of how to make a decision is built into the object itself through the process of *model training*, they often do not require an additional database to consult when making decisions. This unique attribute of ML models makes model hosting servers simpler than many other applications. Typically, with the exception of extremely large models, a model can live in-memory on a server/within a container. This post will go over how easy it is to set up a simple API using flask to host your ML models, and then a future post will cover how to scale up this API by dockerizing it and deploying it to a container hosting service.
+
+One caveat for this tutorial is that it assumes all of the data for model scoring can be POST'd to your API, or can easily be obtained with a quick pre-processing step requiring no outside information (min-max scaling, normalization, binning, etc.). This may not be the case, depending on your application. For example, your company may require you to retrieve information about an entity (e.g. a customer) and only pass you the unique identifier of the entity (e.g. customer ID). This blog post also assumes that all requests coming in to the server should be trusted (e.g. this server sits inside of a private VPC). Because of this, there will be no authentication checks for the incoming requests, but it would be easy enough to check if incoming requests are properly authorized with token-based authentication.
+
+## Training a Model
+
+
+The first thing that we have to do in order to serve a model is to train a model. I trained a model for the UCI Mushroom dataset. If you know me, you know I am an avid mushroom forager, so what would be better than using a dataset with personal meaning? This dataset contains a number of categorical variables describing qualitative features of the mushrooms and a target variable denoting "poisonous" (1) or "edible" (0). The mushroom samples are all limited to the genera *Lepiota* and *Agaricus*. This should go without saying, but please don't use this dataset to assess whether or not a mushroom is edible :).
+
+<center>
+<p>
+    <img src="assets/posts/2023-09-26-flask-api/reddening_lepiota.jpg" height=200px alt>
+    <img src="assets/posts/2023-09-26-flask-api/lepiota_brunneoincarnata.jpg" height=200px alt>
+</p>
+<p>
+  <em>Two mushrooms of the Lepiota genus. The reddening Lepiota on the left/top is an edible mushroom. The other mushroom is the deadly poisonous Lepiota brunneoincarnata! (images from <a href='https://en.wikipedia.org/wiki/Lepiota_brunneoincarnata'>Wikipedia</a> and <a href='https://mdc.mo.gov/discover-nature/field-guide/reddening-lepiota'>MO Dept. of Conservation</a>)</em>
+</p>
+</center>
+
+
+Because all of the input variables are categorical, I chose to use a simple decision tree model, which lends itself to these types of features. I one-hot encoded the categorical features as input to the model and filtered out a number of categories based on feature importance, which left me with 6 features.  Not a lot of time went into fine-tuning the model, but the model achieves an accuracy score of >99.6% on the holdout set (which is still not good enough to say for sure whether or not you should eat potentially lethal mushrooms!). These are the six relevant categorical features in our model:
+
+  - odor == None (n)? [N(0)/Y(1)]
+  - stalk_root == club (c)? [N(0)/Y(1)]
+  - stalk_surface_below_ring == scaly (y)? [N(0)/Y(1)]
+  - spore_print_color == green (r)? [N(0)/Y(1)]
+  - odor == almond (a)? [N(0)/Y(1)]
+  - odor == anise (l)? [N(0)/Y(1)]
+
+The corresponding correlation matrix for these features is as follows:
+
+<center>
+<p>
+    <img src="assets/posts/2023-09-26-flask-api/correlation_coefficient_matrix.png" height=400px alt>
+</p>
+<p>
+  <em>Feature/target correlation coefficient matrix</em>
+</p>
+</center>
+
+Since we are not thinking too critically on the "business use case" of this model and really only care about model serving, this is fine for our purposes. As a small aside, in the real world, we would want a model like this to have *perfect recall*. Not poisoning people is much more important than having a few edible mushrooms falsely marked as inedible. So, ideally, a model like this would have 0 false negatives.
+
+## Setting up a Flask Scoring Server
+
+Now that we have a model, we need a way to allow other services to query it for its score. We are going to make the simplest GET route on a flask server. Flask will need to be installed in the environment we are working with using `pip install flask`. Then, we can create a file called `app.py` with the following code:
+
+{% highlight python %}
+from flask import Flask, request, Response
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "<p>Hello World</p>"
+{% endhighlight %}
+
+Now, from this directory, we can run `flask run --port 8000`. This will start a flask server on port 8000. To check to see if the server is up and running, in another terminal window, we can run `curl localhost:8000` or visit localhost:8000 in a browser window. The response should be: "<p>Hello World</p>". Great - this is the most barebones flask app that we can run. There is a single endpoint, `/`, that returns a static string no matter what the request contains.
+
+### Creating a POST Endpoint
+
+We are going to add another endpoint to this application that uses the POST method and takes in as payload input features for our model. It will receive this input as JSON, parse it out, feed it into our model, and produce a score. To begin, we will create another function in `app.py` that literally just echoes our own request back to us as a string:
+
+{% highlight python %}
+@app.route('/score', methods=["POST"])
+def score():
+    json_req = request.get_json()
+    return Response(response=str(json_req), status=200)
+{% endhighlight %}
+
+Easy enough. We can now send valid JSON to the server and expect an echoed response. After restarting the server, we can run the following in our terminal to test:
+
+```curl -X POST -H 'Content-Type: application/json' -d '{"blah": "ok"}' http://localhost:8000/score```
+
+The local server should echo the request payload: `{'blah': 'ok'}`.
+
+
+### Model Validations
+
+Before we can create feature vectors to feed into our model, we need to validate that the raw categorical data that was POSTed to us is valid. The two checks that we need to make are that 
+
+1. All of the features that we need to score the request are present (`odor`, `stalk_root`, `stalk_surface_below_ring`, `spore_print_color`)
+2. All of the features listed above are given a valid value (must be category that we've seen in training before)
+
+If either of these two conditions fail, we will return a 400 Bad Request response indicating the input is malformed, and providing a descriptive message as to what is wrong with the request. For example, when we try to post the API with  ```{"odor": "x", "stalk_root": "c", "stalk_surface_below_ring": "y"}```, the API returns the response 
+
+```
+Not all columns were specified for model. Missing columns: 
+    spore_print_color
+```
+
+Similarly, if we try and send a request not containing valid values for our inputs, we receive the following error message: 
+
+```
+Input is invalid:
+    "x" is not a valid value for "odor"
+```
+
+If both of these validation checks succeed, we continue to creating a one-hot encoded feature vector from the raw categorical inputs.
+
+
+### Creating a Feature Vector
+
+I mentioned in the introduction that this model assumes a lot of nice things about the input we receive. In reality, feature vectors are often not so easy to obtain and require more complex systems, such as **feature stores**, to bring us up-to-date features. This post assumes that we receive the raw categorical information and that only one-hot encoding must be done on our server. The one-hot encoding function looks as follows:
+
+
+{% highlight python %}
+def extract_features(odor, stalk_root, stalk_surface_below_ring, spore_print_color):
+    """
+    Turns categorical features into features that we care about for our model. Realistically,
+    this would probably be much more complex and would be done in a feature store.
+    """
+    return (
+        int(odor == 'n'), int(stalk_root == 'c'), int(stalk_surface_below_ring == 'y'),
+        int(spore_print_color == 'r'), int(odor == 'a'), int(odor == 'l')
+    )
+{% endhighlight %}
+
+It takes in our four raw categorical features (`odor`, `stalk_root`, `stalk_surface_below_ring`, `spore_print_color`) and returns a 6-tuple representing a one-hot encoded feature vector that can now be scored by our model!
+
+### Scoring With a Model Object
+
+A modeling team needs to decide if they are keeping their model as a **model binary** and loading it in the same framework that it was trained in or if they are storing it in an agnostic format to be loaded in a language/framework-independent manner. An example of a model binary would be the `pickle` serialization module in Python. Pickle is an easy way to save model objects within python, but *they can only be deserialized in python if the library used for training is in the namespace*. An example of a framework-independent format is the Open Neural Network Exchange (ONNX). ONNX is a universal method of storing neural network weights/architectures so that models can be passed between neural network frameworks. Another flexible representation of models is the Predictive Model Markup Language (PMML).
+
+In my case, I could install `scikit-learn`, keep the model object in memory, and score incoming requests using the decision tree object's `predict()` function. Because of the simplicity of my model, however, there is an easier way to generate a model score. I chose to slightly modify [some code from Stack Overflow](https://stackoverflow.com/a/39772170) to generate python code to mimic the functionality of a `scikit-learn` decision tree object. This has the benefit of not requiring `scikit-learn` to be installed on my flask server, but it is not practical for all kinds of models, particularly models whose decisions are not easily explained. The function mimicking the decision tree behavior begins something like this:
+
+{% highlight python %}
+def score_input(odor_n, ..., odor_l):
+    """
+    Decision tree spelled out in code for our model.
+    """
+    if odor_n <= 0.5: 
+      ...
+    else:
+      ...
+{% endhighlight %}
+
+and continues to cover all of the other branches for the decision tree, returning `True` or `False` depending on the majority class at each leaf node. This assumes we have chosen a probability threshold of 0.5 for our model, but we could also change this to be a probability threshold based on the fraction of negative/positive class instances at each leaf node. This function will be used to score incoming requests.
+
+## Conclusion
+
+Putting it all together, we have a POST route on our flask server which receives a payload from an incoming request, parses the request body, validates the features, scores the request, and finally, returns the model's score as a response. The final function looks as follows:
+
+{% highlight python %}
+@app.route('/score', methods=["POST"])
+def score():
+    error_msg = ''
+    raw_column_data = request.get_json()
+    required_cols = ['odor', 'stalk_root', 'stalk_surface_below_ring', 'spore_print_color']
+    column_data_relevant = get_relevant_column_data(raw_column_data, required_cols)
+    missing_cols = get_missing_cols(required_cols, column_data_relevant.keys())
+
+    # Generate missing column error message
+    if missing_cols: error_msg += missing_col_error_msg(missing_cols)
+
+    # Check for valid feature values
+    validity_check = validate_input(column_data_relevant, required_cols, validity_fn)
+    if not all(validity_check.values()):
+        error_msg += invalid_input_error_msg(validity_check, column_data_relevant)
+
+    if error_msg: # If there are any errors, return error message with 400 response
+        return Response(error_msg, status=400)
+
+    feature_values = extract_features(*column_data_relevant.values())
+    return Response(response=str(int(score_input(*feature_values))), status=200)
+{% endhighlight %}
+
+We have set up a very barebones flask server for model scoring, but this is not too different from what we need to do in production to serve model requests. A real server would need more application logging/monitoring to know if it was behaving correctly. The next step is to put this server in a container and send it to a service that can deploy many of our containers at once to scale it out. Thanks for reading!
