@@ -7,7 +7,7 @@ usemathjax: true
 
 
 <center>
-<p><image height=200px src="assets/posts/2023-09-26-flask-api/Agaricus-campestris.jpg"></image></p>
+<p><image height=200px src="assets/posts/2023-09-26-flask-api/agaricus-campestris.jpg"></image></p>
 <p><em>Delicious supplement to dinner? Or deadly poison?<br>(image from <a href="https://en.wikipedia.org/wiki/Agaricus#/media/File:Agaricus-campestris-michoacan.jpg">Wikipedia</a>)</em></p>
 
 </center>
