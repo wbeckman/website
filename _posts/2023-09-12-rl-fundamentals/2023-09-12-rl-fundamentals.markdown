@@ -220,5 +220,5 @@ Value iteration converges in 643 steps, policy iteration in 10 steps, and Q-lear
 
 Of course, the slippery frozen lake is incredibly simple compared to many real-world reinforcement learning problems. Many real-world applications use continuous-valued sensor measurements as state measurements. Because continuous-valued sensor measurements are much more varied and represent a massive number of states when combined, it becomes intractable to create a Q value for every state-action pair. In this case, we prefer to **approximate** Q-values with a flexible function approximator, such as a neural network. This approach is called Deep Q-Learning. There are some tricks that are needed to get Deep Q-Learning working, but it is an incredible algorithm that has been used to play video games **at superhuman levels from just pixel data**[^1]. If you're interested in going deeper learning about reinforcement learning, the most comprehensive guide, as of writing this, is <a href='http://incompleteideas.net/book/the-book-2nd.html'>Reinforcement Learning: An Introduction by Sutton & Barto</a>. Thanks for reading!
 
-[^1]: [DQN paper](https://www.nature.com/articles/nature14236)
+[^1]: [DQN paper](https://www.nature.com/articles/nature14236){:target="_blank"}
 

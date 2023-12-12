@@ -1,0 +1,235 @@
+---
+layout: post
+title:  "Wordle, Entropy, and... Decision Trees?"
+date:   2023-12-12 12:00:00 -0400
+usemathjax: true
+---
+
+<center>
+<p><image height=200px src="assets/posts/2023-12-12-wordle/title.png"></image></p>
+</center>
+
+<p style="text-align: center;">The code associated with this blog post can be found 
+<a target="_blank" href="https://github.com/wbeckman/wordlebot">here</a>.</p>
+
+
+## Table of Contents <!-- omit in toc -->
+- [Intro](#intro)
+- [The Game of Wordle](#the-game-of-wordle)
+- [Strategy](#strategy)
+  - [Strategy Overview](#strategy-overview)
+  - [Enter: Entropy](#enter-entropy)
+  - [What Is Entropy?](#what-is-entropy)
+- [Practical Matters](#practical-matters)
+  - [Choosing Word Lists](#choosing-word-lists)
+  - [Writing and Assessing an Entropy-Based Solver](#writing-and-assessing-an-entropy-based-solver)
+  - [Optimality, Worst Case Scenarios](#optimality-worst-case-scenarios)
+  - [Wordlebot](#wordlebot)
+- [Wait, But What About Decision Trees?](#wait-but-what-about-decision-trees)
+- [Conclusion](#conclusion)
+
+## Intro
+
+I'm a little late to the party, but I wanted to try my hand at creating a Wordle solver and see how good I could make it. It turns out, if you exploit some information from the New York Times list of allowed words, you can make a solver that is very good. Let's dive in!
+
+## The Game of Wordle
+
+If you're like me and you play Wordle every day, you can skip this part, because it's just an overview of how the game works. 
+
+The setup is as follows: there is a secret 5-letter word chosen by the New York Times (NYT). Your goal is to guess that word within six guesses. Each guess gives you a piece of feedback on how correct that word is in the form of "blocks":
+
+- A black block (⬛) means that the letter is NOT contained in the hidden word.
+- A yellow block (🟨) means that the letter is contained in the hidden word, but the letter's position in the hidden word differs from our guess.
+- A green block (🟩) means that the letter is contained in the hidden word in the SAME position as our guess.
+
+<center>
+<p><image height=200px src="assets/posts/2023-12-12-wordle/wordle_example.png"></image></p>
+</center>
+
+In the example above, my first two guesses tell me that the letters "S", "L", and "E" are in the target word (i.e. "SOLVE"), but not in the positions I guessed them. With my final guess, there were two possible words left: SMILE and SOLVE, and I got lucky.
+
+There are a few final technicalities. If there are two of the same letters guessed and that letter only appears once in the hidden word, one letter will be yellow/green and the other will be black. This is shown in the guess 'TREES' - the third-position E is yellow and the fourth-position E is black, because there is only one 'E' in the target word (SOLVE).
+
+Finally, green squares will ALWAYS resolve before yellow and black squares. For example, if the hidden word were "CRIER" instead of "SOLVE", the clue for 'TREES' would be given as ⬛🟩⬛🟩⬛ rather than ⬛🟩🟨⬛⬛. Even though the third-position 'E' comes before the fourth-position 'E', the fourth-position 'E' is green, and therefore, takes precedence.
+
+If the rules above are unclear, [playing the game](https://www.nytimes.com/games/wordle/index.html){:target="_blank"} on the New York Times' website will certainly elucidate the rules for you. I learn by doing, and this is especially true with games for me.
+
+## Strategy
+
+### Strategy Overview
+
+My Wordle solver is based on the concept of **entropy**. To understand entropy, we are going to explore it using a vocabulary of just five carefully chosen words. These words are: **BILLS, HILLS, MILLS, THUMB,** and **TILLS**. Let's pretend that our first guess was TILLS. We see the following result:
+
+<center>
+<p><image height=50px src="assets/posts/2023-12-12-wordle/tills.png"></image></p>
+</center>
+
+At first, this seems pretty nice - we got four characters correct. At first glance, it seems like we almost solved the puzzle. But, if you look closer, you can see there are still three words in our vocabulary which match this feedback: BILLS, MILLS, and HILLS. Therefore, in our worst case, we are still making four guesses to determine the solution.
+
+But what if we were to guess THUMB instead? Pretend we guess THUMB and we are given the following feedback: 
+
+<center>
+<p><image height=50px src="assets/posts/2023-12-12-wordle/thumb.png"></image></p>
+</center>
+
+By the colors alone, it might seem worse than TILLS - only one of the letters is in the hidden word. But actually, this guess solves the puzzle for us in the next turn. No other word contains an "H", so this gives away that HILLS is the correct answer.
+
+So, what we care about for our strategy is - **given a guess word, across ALL possible pieces of feedback the puzzle could give us, how much does this guess reduce the search space on average**? It seems THUMB is better at this than TILLS, but how can we show this quantitatively?
+
+### Enter: Entropy
+
+Keeping with our vocabulary from before, we can formalize *how good each guess is by how much it eliminates other words in the vocabulary on average*, assuming all words are equally likely to be the hidden word. "HILLS", "TILLS", "MILLS", and "BILLS" are all equally good guesses, so we will just look at "THUMB" and "TILLS" as examples.
+
+
+If we guess "THUMB", what are the possible patterns we could see? We can enumerate them here:
+- If we see: 🟩🟩🟩🟩🟩 - the hidden word is "THUMB" (probability $\frac{1}{5}$)
+- If we see: 🟩⬛⬛⬛⬛ - the hidden word is "TILLS" (probability $\frac{1}{5}$)
+- If we see: ⬛🟨⬛⬛⬛ - the hidden word is "HILLS" (probability $\frac{1}{5}$)
+- If we see: ⬛⬛⬛🟨⬛ - the hidden word is "MILLS" (probability $\frac{1}{5}$)
+- If we see: ⬛⬛⬛⬛🟨 - the hidden word is "BILLS" (probability $\frac{1}{5}$)
+
+So, in the WORST case, we solve the puzzle in two tries guessing "THUMB" as our first guess. Lets look at the same breakdown for if we guess "TILLS":
+- If we see: 🟩🟩🟩🟩🟩 - the hidden word is "TILLS" (probability $\frac{1}{5}$)
+- If we see: 🟩⬛⬛⬛⬛ - the hidden word is "THUMB" (probability $\frac{1}{5}$)
+- If we see: ⬛🟩🟩🟩🟩 - the hidden word is in ["HILLS", "MILLS", "BILLS"] (probability $\frac{3}{5}$)
+
+So, if we guess "TILLS", there is a bucket with more than one word that we will hit with 60% probability, meaning we are not guaranteed to solve the puzzle in two turns. If we iterate over all words in our vocabulary and *bucket all possible hidden words into their corresponding patterns* (an $O(|vocab|^2)$ runtime operation), this prepares us to compute a value called **entropy**. The formula for entropy is:
+<center><p>$
+Entropy(word)=-\sum_{i}{p(i) * \log_2{p(i)}}
+$</p></center>
+
+The '$i$' in the above equation for us is 'patterns'. So, **for each possible pattern, we take the probability of seeing that pattern ($p(i)$), and multiply it by $log_2{p(i)}$**. Then, this value is summed for all possible patterns and multiplied by $-1$. The entropy for "THUMB" is then: 
+<center><p>$
+Entropy(THUMB)=-\sum_{i=1}^5{\frac{1}{5} * \log_2{\frac{1}{5}}} \approx 2.32
+$</p></center>
+
+Now, computing the entropy for TILLS: 
+<center><p>$
+Entropy(TILLS)=-(\frac{1}{5} * \log_2{\frac{1}{5}} + \frac{1}{5} * \log_2{\frac{1}{5}} + \frac{3}{5} * \log_2{\frac{3}{5}}) \approx 1.37
+$</p></center>
+
+And we can see that, from an entropy perspective, THUMB is a quantifiably better guess than TILLS. We are effectively **turning each word into a discrete probability distribution over all possible patterns that we could see**, and then **computing an information index (entropy) for that probability distribution**. This translation of word --> probability distribution is an important concept that we will discuss in the next section.
+
+### What Is Entropy?
+
+I mentioned how we calculate entropy, but I didn't really discuss what it is or why it's useful. Entropy is an attempt to measure "disorder" in a probability distribution. Probability distributions with high entropies will split *more events more evenly*. [Claude Shannon](https://en.wikipedia.org/wiki/Claude_Shannon){:target="_blank"} is the one who coined entropy, and he wanted to describe "uncertainty" in a probability distribution in terms of **bits**. 
+
+As an extremely simple example, we can consider a fair coin ($P(heads) = P(tails) = \frac{1}{2}$) and a fair 4-sided die ($P(1) = P(2) = P(3) = P(4) = \frac{1}{4}$). For this example, let's pretend we can observe the result of a coin flip and a die roll and *we need to transmit the result to a person that we cannot see using a binary encoding*. We can encode the coin flip in a single bit - literally sending `0` or `1` based on whether we observe heads or tails. The die, however must be encoded with two bits - the four results must be encoded as `00`, `01`, `10`, and `11`.
+
+So, there is more information present in the die roll, because the encoded message has to be larger. *Entropy is a measure of how to quantify the amount of information present in both of these events*. This is abstract! We can calculate the entropy of the coin flip and the die roll using our equation above:
+
+<center><p>
+$Entropy(COIN)-\sum_{i=1}^2{\frac{1}{2} * \log_2{\frac{1}{2}}}=1.0$
+</p></center>
+<center><p>
+$Entropy(4DIE)-\sum_{i=1}^4{\frac{1}{4} * \log_2{\frac{1}{4}}}=2.0$
+</p></center>
+
+As you can see, **the entropy values of each random variable perfectly represent the number of bits needed to send the messages**. (This is a bit of a contrived example, we have to round up to truly encode the information - a 3-sided die $P(1)=0.98$, $P(2)=0.01$, and $P(3)=0.01$ only has an entropy value of 0.08 bits, but we still need a way to transmit the unlikely event of a TAILS event occurring.)
+
+Another interpretation of entropy is as "surprise". If we are more surprised (i.e. *probability distribution is close to uniform*), entropy is usually higher and we need more bits to represent the information in the probability distribution. If a small number of events happen very frequently (such as with our biased coin), we are less surprised, and the entropy of the distribution is lower. So, in the context of our Wordle words, **words with high average entropies are words that are likely to have a higher variety of possible patterns with a relatively even distribution among them**.
+
+Looking ahead for a second, I calculated the pattern probability distributions for the best word - 'TARSE' and the worst word - 'QAJAQ'. The sum of words in all buckets for each word is 2309 - the amount of possible hidden words in the NYT solutions list. You can see how massively these distributions differ (particularly, note the scale on the y-axis)!
+
+<center>
+<p><image width=600px src="assets/posts/2023-12-12-wordle/tarse_distributions.png"></image></p>
+<p><image width=600px src="assets/posts/2023-12-12-wordle/qajaq_distributions.png"></image></p>
+</center>
+
+You can interpret this as - after guessing 'QAJAQ', it's extremely likely (roughly 60% chance) that the hidden word will give us a feedback of ⬛⬛⬛⬛⬛. This would reduce the initial state space of 2309 words to roughly $P(⬛⬛⬛⬛⬛) * 2309\approx 0.6 * 2309\approx1385$ words. This is bad! This means that much of the time, our state space will not even be halved if we guess 'QAJAQ'. This makes sense intuitively - 'J', and 'Q' are very uncommon letters in the English language, so it makes sense that this is a bad word. On the other hand, even the unluckiest pattern for 'TARSE' decreases the state space by a factor of roughly 10x to $\approx 0.1* 2309\approx230.9$, and there are many more patterns that decrease the state space by an even larger factor. 
+
+So, because TARSE has so many more possible patterns (147) and has a relatively even distribution amongst them, it has an entropy of 5.95. Similarly, because QAJAQ is overwhelmingly likely to yield ⬛⬛⬛⬛⬛ as a response from the puzzle, and the '⬛⬛⬛⬛⬛' bucket is much larger than all of the other ones, it has a correspondingly low entropy - 1.89. Believe it or not, this concept of computing entropy based on word-pattern buckets is all you need to know to make a Wordle solver!
+
+
+## Practical Matters
+
+### Choosing Word Lists
+
+Before going into the details of the algorithm, we need to know what our vocabulary is. There are a few well-accepted word lists that the NYT uses for Wordle. First, there is a list of words that they will **allow you to guess, but will never be the solution**. These are typically less common words and plural forms of 4-letter singular words. Then, there is a **shorter list of words that could possibly be the hidden word**. **This word list is a subset of the larger word list**. These lists have changed sizes over time. Most notably, the list of possible guess words has expanded in recent years:
+
+|                                      |  All possible guesses | All possible hidden words   |
+| ------------------------------------ | --------------------- | --------------------------- |
+| Number of Words - Before 08/29/2022  |                12,972 |                        2309 |
+| Number of Words - After 08/29/2022   |                14,885 |                        2309 |
+
+(This information was taken from a [great blog post by Alex Selby](https://sonorouschocolate.com/notes/index.php/The_best_strategies_for_Wordle,_part_2){:target="_blank"}).
+
+I chose to use the more recent word lists in my solver. I computed information ALL possible words based on which hidden words are still viable.
+
+### Writing and Assessing an Entropy-Based Solver
+
+The process for writing the solver is identical to the process I described above with our small vocabulary, only now, there are far more words. I computed the entropy of all 14,885 words in the dictionary against all 2,309 words in the NYT hidden words list. Because the lists are static, the best first word is always fixed. From an entropy perspective, I mentioned the best first word is always "[TARSE](https://en.wiktionary.org/wiki/tarse){:target="_blank"}", with an entropy value of 5.95. If you've never heard of the word 'TARSE', you're not alone, but Wordle allows you to guess it. Other good options are 'TIARE' with an entropy of 5.93, 'SOARE' with an entropy of 5.89, 'ROATE' with an entropy of 5.88, and perhaps the first "real" word in the top 5 - 'RAISE' with an entropy of 5.88.
+
+Once the first guess is made, the puzzle gives you a piece of feedback. Then, we prune the state space of 2309 words based on which words could possibly still be the solution, based on the feedback we got. Then, we recompute entropy for the new subset of words and choose the next best word. This process is then repeated until the puzzle is solved.
+
+On the list of 2309 NYT hidden words, the solver takes 3.61 guesses on average and never takes more than 6 guesses to guess the hidden word. This is sort of a "cheat mode", because it assumes we have access to the hidden words list AND the "guessable" words list. This performance is likely overfit to the choice of words in each list. However, if you gave a person access to these two lists while they were playing, it's unlikely it would change their play style much at all.
+
+### Optimality, Worst Case Scenarios
+
+It's also worth noting that this entropy-based strategy *is not optimal*! It is guaranteed to reduce the guess space as much as it possibly can on average with each guess, but **it does not guarantee future word groups will have good splits, on average**. In other words, **this strategy is a greedy strategy**, based on the heuristic of entropy. While it's not optimal, it probably has above average human performance. This is also probably why my solver chooses the best word to be 'TARSE', while the NYT bot chooses the best opening word to be 'CRANE' - I imagine they put a little more computational power into looking a few steps ahead. Some people[^1] have also put a lot of compute hours into finding a tree that is optimal for Wordle play.
+
+Another interesting tidbit I came across in doing research for this blog post is a worst-case Wordle puzzle proof. I found a [fantastic blog post by Alex Peattie](https://alexpeattie.com/blog/establishing-minimum-guesses-wordle/){:target="_blank"} detailing the minimum number of guesses needed to solve Wordle, in the worst case (i.e. you are as unlucky as you possibly could be). Rather than take a brute force computational approach, he describes a game of 'ILLS' wordle, where all of the possible solution words end with the letter 'ILLS'. There are 19 such words in the NYT allowable vocabulary list: {b,c,d,f,g,h,j,k,l,m,n,p,r,s,t,v,w,y,z}-ills. His blog post proves that as long as the vocabulary is limited to the 12972 words listed on the NYT front-end, and that all of the '-ILLS' words are contained in the solution set, in the worst case, the minimum number of guesses required is 6. This result holds for an *expanded game of Wordle*, where the hidden word set is the same as the 12,972 possible guess words.
+
+### Wordlebot
+
+This is just a plug to a CLI tool that I built to help solve Wordle puzzles, if you feel like cheating on a given day ;). You can go to the [wordlebot](https://github.com/wbeckman/wordlebot){:target="_blank"} Github repo, clone it, and run `pip install .`
+
+This gives you a CLI utility that you can run by typing `wordlebot`. If you want to see what it would guess in a given situation without ruining the Wordle puzzle of the day, [Wordle Unlimited](https://wordleunlimited.org/){:target="_blank"} shares a very similar vocabulary list with `wordlebot` (although 'TARSE' is not in its allowed guesses list, so you might have to open with 'SOARE' instead. This is because Wordle Unlimited uses the pre-08/29/2022 vocabulary list of 12,972 words). If multiple words are as good as each other, it will recommend a word that could also be the solution.
+
+## Wait, But What About Decision Trees?
+
+Finally, to *really* drill the concept of entropy home, we are going to talk about its role in decision trees. As it turns out, *the decision tree training process uses entropy to determine the next best split!* Specifically, it computes the entropy of the current dataset and then compares it to what the average entropy would be between the resultant children datasets after a split. If the average entropy of the children is LOWER we prefer the split. The optimal split is the split that provides us with the *lowest average child entropy*. Calculating entropy for the parent dataset and the two children datasets is a metric called **information gain**. The formula for information gain is as follows:
+
+<center>
+$Gain(feature)=Entropy(Parent)-WeightedEntropy(Children)$
+</center>
+
+Let's look at a small dataset to exemplify this. This is a binary classification dataset I generated with a single informative feature, 'X1'. 
+
+<center>
+<p><image width=600px src="assets/posts/2023-12-12-wordle/toy_example.png"></image></p>
+</center>
+
+
+In this case, we calculate entropy by looking at the probability of the *classes* (rather than the patterns, like before). For example, in this dataset, there are 50 positive class instances and 50 negative class instances. The entropy of the *parent dataset* is exactly $\frac{50}{100} * \log_2{\frac{50}{100}} + \frac{50}{100} * \log_2{\frac{50}{100}}=1.0$.
+
+Now, pretend I were to make a split at `X1=0.0`. This partitions the dataset into two smaller datasets - the left half with 58 instances and the right half with 42 instances.
+
+<center>
+<p><image width=600px src="assets/posts/2023-12-12-wordle/example_partition.png"></image></p>
+</center>
+
+When we calculate the *weighed entropy* of each of those halves, we get
+
+
+<center>
+$WeightedEntropy(LeftSide)=-\frac{58}{100} \times (\frac{9}{58} * \log_2{\frac{9}{58}} + \frac{49}{58} \times \log_2{\frac{49}{58}})\approx 0.36$
+</center>
+<center>
+$WeightedEntropy(RightSide)=-\frac{42}{100} \times (\frac{41}{42} * \log_2{\frac{41}{42}} + \frac{1}{42} * \log_2{\frac{1}{42}})\approx 0.068$
+</center>
+<center>
+$WeightedEntropy(Children)=0.36+0.068\approx 0.428$
+</center>
+
+This weighted average is lower than the parent entropy! So, to get our value for information gain, we compute:
+
+<center>
+$Gain(feature)=Entropy(Parent)-WeightedEntropy(Children)=1.0-0.428=0.572$.
+</center>
+
+This split is definitely an improvement over the original dataset, but can we do better? The way a decision tree finds the best split is by iterating over each possible value of X1 and calculating its information gain. This is a visualization of that process:
+
+<center>
+<video loop autoplay>
+<source src="assets/posts/2023-12-12-wordle/best_splits.mp4">
+</video>
+</center>
+
+It looks like the optimal split is actually very close to 0.0 - at 0.04, giving us an information gain of 0.64! In practice, the [Gini impurity](https://en.wikipedia.org/wiki/Decision_tree_learning#Gini_impurity){:target="_blank"} is a computationally fast way to compute an entropy-like value. Instead of $-\sum_i{\log_2{p(i)} * p(i)}$, Gini impurity computes $1-\sum_i{p(i)^2}$. Avoiding this `log` can speed up decision tree training for a large number of features.
+
+## Conclusion
+
+Thanks for making it this far. Hopefully this has been an educational journey on Wordle solvers, decision trees, and how the two relate. If you notice any errors in the article, don't hesitate to reach out to me at will@willbeckman.com.
+
+[^1]: [Laurent Poirrier's blog detailing all the recent Wordle research](https://www.poirrier.ca/notes/wordle/){:target="_blank"}
