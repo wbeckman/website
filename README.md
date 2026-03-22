@@ -29,8 +29,7 @@ bundle exec jekyll serve
    layout: post
    title: "Your Post Title"
    date: YYYY-MM-DD HH:MM:SS -0500
-   categories: [category1, category2]
-   usemathjax: true  # optional, if you need math rendering
+   usemathjax: true  # optional, for LaTeX rendering
    ---
    ```
 
@@ -46,15 +45,7 @@ bundle exec jekyll serve
 
 ## Deployment
 
-This site auto-deploys via GitHub Pages when you push to `main`.
-
-```bash
-git add .
-git commit -m "Your commit message"
-git push origin main
-```
-
-The site will rebuild automatically. Changes typically appear within 1-2 minutes.
+Push to `main` and GitHub Actions will build and deploy automatically. Track progress under the **Actions** tab in the repo. Changes typically appear within 1-2 minutes.
 
 ## Project Structure
 
@@ -83,6 +74,56 @@ Edit `_config.yml` to change:
 - `github_username` - GitHub profile link
 
 **Note:** After editing `_config.yml`, restart the local server to see changes.
+
+### Embedding JS Animations
+
+Jekyll passes raw HTML through unchanged, so you can drop JavaScript directly into any `.markdown` post.
+
+**Inline canvas animation**
+
+```html
+<canvas id="my-canvas" width="600" height="300" style="border:1px solid #ccc;"></canvas>
+<script>
+  const canvas = document.getElementById('my-canvas');
+  const ctx = canvas.getContext('2d');
+  let x = 0;
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(x % canvas.width, 130, 20, 20);
+    x += 2;
+    requestAnimationFrame(draw);
+  }
+  draw();
+</script>
+```
+
+**Load a library from CDN, then use it**
+
+```html
+<div id="plot"></div>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+  Plotly.newPlot('plot', [{
+    x: [1, 2, 3],
+    y: [2, 6, 3],
+    type: 'scatter'
+  }]);
+</script>
+```
+
+**Load a local JS file from `assets/`**
+
+Put your script at `assets/js/my-animation.js`, then in the post:
+
+```html
+<div id="root"></div>
+<script src="/assets/js/my-animation.js"></script>
+```
+
+**Tip:** If the script depends on the DOM element being present, place the `<script>` tag *after* the element, not in `<head>`.
+
+---
 
 ### Using Math (LaTeX)
 
@@ -121,4 +162,4 @@ bundle install  # Reinstall dependencies
 ```
 
 **Ruby version issues?**
-Check `.ruby-version` or use a version manager like rbenv/asdf.
+Use a version manager like rbenv or asdf. The `github-pages` gem pins its own Ruby/Jekyll versions — match those locally for the closest parity.
