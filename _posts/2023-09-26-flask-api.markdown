@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Productionizing ML Models - Part 1"
+title:  "Productionizing Simple ML Models End-to-End"
 date:   2023-09-26 12:00:00 -0400
 usemathjax: true
 ---
@@ -194,4 +194,4 @@ def score():
     return Response(response=str(int(score_input(*feature_values))), status=200)
 {% endhighlight %}
 
-We have set up a very barebones flask server for model scoring, but this is not too different from what we need to do in production to serve model requests. A real server would need more application logging/monitoring to know if it was behaving correctly. The next step is to put this server in a container and send it to a service that can deploy many of our containers at once to scale it out. Thanks for reading!
+We have set up a very barebones flask server for model scoring, but this is not too different from what we need to do in production to serve model requests. A real server would need more application logging/monitoring to know if it was behaving correctly. Thanks for reading!
